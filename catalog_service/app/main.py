@@ -76,4 +76,3 @@ def delete_product(product_id: int):
         raise HTTPException(status_code=404, detail="Product not found")
     del products_db[product_id]
     return {"instance_id": INSTANCE_NAME, "message": "Product deleted"}
-# Автор Catalog-сервиса: [Ваше Имя]
