@@ -38,8 +38,6 @@ services:
     networks:
       - lab2_net
 
-  # Nginx оставляем, но он может не запуститься, если порт 8080 занят. 
-  # Для сдачи лабы он не критичен, так как мы открыли прямые порты.
   nginx:
     image: nginx:alpine
     container_name: nginx
@@ -58,19 +56,18 @@ services:
     build: ./graphql_gateway
     container_name: graphql-gateway
     ports:
-      - "8003:8000"  # <--- ВОТ ТУТ МЫ ОТКРЫЛИ ПОРТ 8003
+      - "8003:8000"
     depends_on:
       - catalog-1
     networks:
       - lab2_net
 
-
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq
     ports:
-      - "5672:5672"     # Порт для клиентов
-      - "15672:15672"   # Порт для веб-панели
+      - "5672:5672"
+      - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
@@ -78,20 +75,27 @@ services:
       - lab2_net
 
   order-service:
-    build: ./order_service
+    build: 
+      context: .
+      dockerfile: order_service/Dockerfile
     container_name: order-service
     restart: on-failure
     ports:
       - "8004:8000"
     depends_on:
       - rabbitmq
+      - payment-service
     networks:
       - lab2_net
 
   payment-service:
-    build: ./payment_service
+    build: 
+      context: .
+      dockerfile: payment_service/Dockerfile
     container_name: payment-service
     restart: on-failure
+    ports:
+      - "50051:50051"
     depends_on:
       - rabbitmq
     networks:
@@ -109,4 +113,3 @@ services:
 networks:
   lab2_net:
     driver: bridge
-

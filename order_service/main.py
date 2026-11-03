@@ -86,3 +86,65 @@ def create_order(order: OrderCreate):
 @app.get("/orders/{order_id}")
 def get_order(order_id: str):
     return orders_db.get(order_id, {"error": "Not found"})
+
+import grpc
+import pybreaker
+import payment_pb2
+import payment_pb2_grpc
+from fastapi import HTTPException
+
+# 1. Настраиваем Circuit Breaker
+payment_breaker = pybreaker.CircuitBreaker(fail_max=3, reset_timeout=10)
+
+class PaymentListener(pybreaker.CircuitBreakerListener):
+    def state_change(self, cb, old_state, new_state):
+        print(f"\n[!!!CIRCUIT BREAKER!!!] Состояние изменилось: {old_state.name} -> {new_state.name}\n", flush=True)
+
+payment_breaker.add_listener(PaymentListener())
+
+# 2. Функция вызова gRPC
+@payment_breaker
+def call_grpc_payment(order_id: str, amount: float, simulate_failure: bool):
+    channel = grpc.insecure_channel('payment-service:50051')
+    stub = payment_pb2_grpc.PaymentServiceStub(channel)
+    
+    request = payment_pb2.PaymentRequest(
+        order_id=order_id,
+        amount=amount,
+        simulate_failure=simulate_failure
+    )
+    response = stub.CheckPaymentStatus(request, timeout=2)
+    return response
+
+# 1. Переопределяем функцию fallback, чтобы она явно писала в консоль
+def payment_fallback(order_id: str, amount: float, simulate_failure: bool, exc):
+    print("\n" + "="*50, flush=True)
+    print(f"[FALLBACK] СРАБОТАЛА ЗАГЛУШКА! Причина: {type(exc).__name__}", flush=True)
+    print("="*50 + "\n", flush=True)
+    return {
+        "transaction_id": "fallback-tx",
+        "status": "PROCESSING",
+        "message": "Платежная система временно недоступна, попробуйте позже"
+    }
+
+# 2. Эндпоинт с логированием переходов
+@app.post("/check-payment")
+def check_payment(req: PaymentCheckRequest):
+    # Выводим текущее состояние перед запросом
+    print(f"[CB STATUS] Текущее состояние: {payment_breaker.current_state}", flush=True)
+    
+    try:
+        response = call_grpc_payment(req.order_id, req.amount, req.simulate_failure)
+        return {
+            "transaction_id": response.transaction_id,
+            "status": response.status,
+            "message": response.message
+        }
+    except pybreaker.CircuitBreakerError as e:
+        # Это исключение летит, когда цепь разомкнута (OPEN)
+        print(f"[CB ERROR] Цепь разомкнута! Ошибка: {type(e).__name__}", flush=True)
+        return payment_fallback(req.order_id, req.amount, req.simulate_failure, e)
+    except Exception as e:
+        # Это исключение летит, когда gRPC вернул ошибку UNAVAILABLE
+        print(f"[CB ERROR] Ошибка gRPC: {type(e).__name__}", flush=True)
+        return payment_fallback(req.order_id, req.amount, req.simulate_failure, e)
