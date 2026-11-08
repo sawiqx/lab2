@@ -1,19 +1,35 @@
+// Указываем, что используем синтаксис Protocol Buffers версии 3
 syntax = "proto3";
 
+// Имя пакета (пространство имен для сгенерированного кода)
 package payment;
 
+// Описание сервиса (аналог контроллера в REST)
 service PaymentService {
+  // Метод, который принимает PaymentRequest и возвращает PaymentResponse
   rpc CheckPaymentStatus (PaymentRequest) returns (PaymentResponse);
 }
 
+// Структура входящего запроса
 message PaymentRequest {
-  string order_id = 1;
+  // Уникальный идентификатор заказа (строка)
+  string order_id = 1; 
+  
+  // Сумма платежа (число с плавающей точкой)
   double amount = 2;
-  bool simulate_failure = 3; // Флаг для имитации сбоя
+  
+  // Флаг для тестирования: если true, сервер имитирует сбой (ошибка UNAVAILABLE)
+  bool simulate_failure = 3; 
 }
 
+// Структура ответа от сервера
 message PaymentResponse {
+  // Идентификатор транзакции (например, txn_12345678)
   string transaction_id = 1;
-  string status = 2; // SUCCESS, FAILED, PROCESSING
+  
+  // Статус оплаты: SUCCESS (успех), FAILED (ошибка), PROCESSING (в обработке)
+  string status = 2;
+  
+  // Текстовое сообщение с деталями (например, "Payment processed successfully")
   string message = 3;
 }
