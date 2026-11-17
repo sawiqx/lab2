@@ -1,6 +1,8 @@
 fastapi
 uvicorn
-pika
+pydantic
+aiokafka
 grpcio
 grpcio-tools
 pybreaker
+protobuf

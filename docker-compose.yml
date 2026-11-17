@@ -73,44 +73,88 @@ services:
     image: rabbitmq:3-management
     container_name: rabbitmq
     ports:
-      - "5672:5672"   # Порт для обмена сообщениями
-      - "15672:15672" # Порт для веб-панели управления
+      - "5672:5672"
+      - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
     networks:
       - lab2_net
 
-  # Order Service (ЛР4 и ЛР5): создает заказы и вызывает gRPC через Circuit Breaker
+  # ==========================================
+  # НОВОЕ ДЛЯ ЛР6: KAFKA
+  # ==========================================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - lab2_net
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - lab2_net
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8081:8080" # Снаружи будет доступно на localhost:8081 (8080 занят Nginx)
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      - kafka
+    networks:
+      - lab2_net
+  # ==========================================
+
+  # Order Service (ЛР4, ЛР5, ЛР6): теперь работает с Kafka
   order-service:
     build: 
-      context: . # Контекст сборки - корень проекта, чтобы видеть папку proto (ЛР5)
+      context: . 
       dockerfile: order_service/Dockerfile
     container_name: order-service
     restart: on-failure
     ports:
-      - "8004:8000" # Порт для Swagger
+      - "8004:8000" # Внутри контейнера приложение должно слушать 8000!
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092 # Передаем адрес Kafka
     depends_on:
       - rabbitmq
       - payment-service
+      - kafka # Ждем запуска Kafka
     networks:
       - lab2_net
 
-  # Payment Service (ЛР4 и ЛР5): обрабатывает оплату через RabbitMQ и gRPC
+  # Payment Service (ЛР4 и ЛР5): без изменений
   payment-service:
     build: 
-      context: . # Контекст сборки - корень проекта, чтобы видеть папку proto (ЛР5)
+      context: . 
       dockerfile: payment_service/Dockerfile
     container_name: payment-service
     restart: on-failure
     ports:
-      - "50051:50051" # Порт для gRPC-сервера (ЛР5)
+      - "50051:50051"
     depends_on:
       - rabbitmq
     networks:
       - lab2_net
 
-  # Notification Service (ЛР4): слушает события и отправляет уведомления
+  # Notification Service (ЛР4): без изменений
   notification-service:
     build: ./notification_service
     container_name: notification-service
@@ -120,7 +164,22 @@ services:
     networks:
       - lab2_net
 
-# Общая сеть, чтобы все контейнеры видели друг друга по именам
+  # ==========================================
+  # НОВОЕ ДЛЯ ЛР6: СЕРВИС АНАЛИТИКИ
+  # ==========================================
+  analytics-service:
+    build: ./analytics_service
+    container_name: analytics-service
+    restart: on-failure
+    ports:
+      - "8005:8000" # Внутри приложение на 8000, снаружи на 8005
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    depends_on:
+      - kafka
+    networks:
+      - lab2_net
+
 networks:
   lab2_net:
     driver: bridge
